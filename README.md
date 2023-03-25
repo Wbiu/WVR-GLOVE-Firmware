@@ -11,10 +11,10 @@ The whole project does not use any of the existing VR Hardware such as the HTC´
 Instruction to build and configuring the glove see : [wiki](https://github.com/Wbiu/WVR-Glove-Wiki)
 
 ## Testing ground in Unreal Engine 5
-After building the Glove you can try the glove in the [UE5 Demo]() that I made.
+After building the Glove you can try the glove in the [UE5 Demo](https://github.com/Wbiu/WVR-Glove-Unreal-Engine-5.1-testing-ground) that I made.
 
 ## UWB tracking
-Since no VR Hardware are used, a UWB based tracking was used instead. UWB tracking firmware see [here]().
+Since no VR Hardware are used, a UWB based tracking was used instead. UWB tracking firmware see [here](https://github.com/Wbiu/UWB-Tracking-DWM3000).
 
 ## About the firmware
 The firmware was coded in [Platformio](https://platformio.org/).<br/>
