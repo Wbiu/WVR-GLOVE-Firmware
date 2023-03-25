@@ -8,7 +8,7 @@ The whole project does not use any of the existing VR Hardware such as the HTC´
 
 
 ## Building and configuring the glove 
-Instruction to build and configuring the glove see : [wiki]("")
+Instruction to build and configuring the glove see : [wiki](https://github.com/Wbiu/WVR-Glove-Wiki)
 
 ## Testing ground in Unreal Engine 5
 After building the Glove you can try the glove in the [UE5 Demo]() that I made.
