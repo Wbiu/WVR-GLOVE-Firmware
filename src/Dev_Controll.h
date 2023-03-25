@@ -1,7 +1,6 @@
 #pragma once
 #include "FFB_Ctrl.h"
 
-
 #ifndef DEVICE_SETUP_H
 #define DEVICE_SETUP_H
 /*if not get correctly implemented change to class with virtual funktions*/
@@ -12,8 +11,6 @@ extern volatile int idx_ffb;
 extern volatile int mdl_ffb;
 extern volatile int rng_ffb;
 extern volatile int pky_ffb;
-
-
 
 void pinSetup();
 void imuSetup();

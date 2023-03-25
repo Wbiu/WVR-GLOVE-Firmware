@@ -1,5 +1,8 @@
 /*
-    main file of the Firmware
+    Main file of the WVR Glove firmware.
+    https://github.com/Wbiu/WVR-GLOVE-Firmware
+
+    Main file is only use for the initialization. There for please see Dev_Controll.h and Dev_Controll.cpp
 */
 #include "Dev_Controll.h"  
 

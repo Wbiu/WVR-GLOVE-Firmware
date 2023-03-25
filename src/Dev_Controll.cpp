@@ -11,11 +11,9 @@ IMU imu_bno;
 SerialCon serialCon;
 WirelessCon wirelessCon;
 /*
- 44:17:93:E3:8E:CC MACADDR Collector
- address of the collector EPS if ESP NOW is used
- using solely Wifi has not be implimented 
+ 44:17:93:E3:8E:CC MACADDR of the Collector
+ Note** ESP-NOW is used for wireless comunication! 
 */
-
 uint8_t destAddr[6] = {0x44, 0x17, 0x93, 0xE3, 0x8E, 0xCC};
 uint8_t esp_now_channel = 1;
 

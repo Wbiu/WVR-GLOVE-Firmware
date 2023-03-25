@@ -1,9 +1,4 @@
-/*
-None wireless connection.
-Less deley
-*/
 #include <Arduino.h>
-//#include "Settings.h"
 #include "Properties.h"
 
 class SerialCon {
