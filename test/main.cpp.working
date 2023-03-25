@@ -1,0 +1,662 @@
+#include <Arduino.h>
+#include <WiFi.h>
+#include <esp_now.h>
+#include <Wire.h>
+#include "SensorFusion.h" //SF
+
+SF fusion;
+#include "MPU9250.h"
+MPU9250 mpu;
+float gx, gy, gz, ax, ay, az, mx, my, mz;
+float pitch, roll, yaw;
+float deltat;
+
+
+#define SDA_PIN 21
+#define SCL_PIN 22
+
+
+
+/*finger pos pin*/
+
+
+int thumbPos_Pin = GPIO_NUM_36;
+int indexPos_Pin = GPIO_NUM_39;
+int middlePos_Pin = GPIO_NUM_34;
+int ringPos_Pin = GPIO_NUM_35;
+int pinkyPos_Pin = GPIO_NUM_32;
+
+int fingerPos_Pin[5]{thumbPos_Pin,indexPos_Pin,middlePos_Pin,ringPos_Pin,pinkyPos_Pin};
+
+/**finger pos values*/
+uint8_t thumbPos_value,indexPos_value,middlePos_value,ringPos_value,pinkyPos_value;
+
+int fingerPos_values[5];
+
+
+/*Thumb motor pins */
+const int thumbMotor_A=GPIO_NUM_33;
+const int thumbMotor_B=GPIO_NUM_25;
+
+
+const int indexMotor_A=GPIO_NUM_26;
+const int indexMotor_B=GPIO_NUM_27;
+
+
+const int middleMotor_A=GPIO_NUM_23;  // 14 -> 5
+const int middleMotor_B=GPIO_NUM_12;
+
+const int ringMotor_A=GPIO_NUM_19;
+const int ringMotor_B=GPIO_NUM_18;
+
+const int pinkyMotor_A=GPIO_NUM_4; // -> 4 // 15
+const int pinkyMotor_B=GPIO_NUM_13;
+
+// setting PWM properties
+const int freq = 50;
+const int resolution = 8;
+
+
+const  int thumbMotorChanal_A = 0;
+const int thumbMotorChanal_B = 1;
+
+
+const int indexMotorChanal_A = 2;
+const int indexMotorChanal_B = 3;
+
+
+const int middleMotorChanal_A = 4;
+const int middleMotorChanal_B = 5;
+
+
+const int ringMotorChanal_A = 6;
+const int ringMotorChanal_B = 7;
+
+const int pinkyMotorChanal_A = 8;
+const int pinkyMotorChanal_B = 9;
+
+int PosZero = 0;
+
+int destVal = 127;
+const int arvgsample = 20;
+const int speed = 25;
+ String posSum;
+/*FFB PWM Controll values*/
+
+volatile int thumbPWM_M_A,thumbPWM_M_B,indexPWM_M_A,indexPWM_M_B,
+    middlePWM_M_A,middlePWM_M_B,ringPWM_M_A,ringPWM_M_B,
+    pinkyPWM_M_A,pinkyPWM_M_B;
+
+   String sep = ";";
+
+uint8_t destAddr[] = {0x44, 0x17, 0x93, 0xE3, 0x8E, 0xCC};
+
+esp_now_peer_info_t peerInfo;
+
+
+typedef struct struct_message {
+  char msg[50];
+} struct_message;
+
+struct_message esp_now_mgs;
+
+int speedVa = 50;
+void findZero()
+{
+
+    while(true)
+    {
+        thumbPos_value =  analogRead(thumbPos_Pin);
+        if(thumbPos_value != PosZero)
+        {
+            ledcWrite(thumbMotorChanal_A, 40);
+        }
+        else
+        {
+            ledcWrite(thumbMotorChanal_A, 0);
+           break;
+        }
+    }
+
+    while(true)
+    {
+        //indexPos_value =  analogRead(indexPos_Pin);
+         indexPos_value = map(analogRead(indexPos_Pin),0,255,255,0);
+        if(indexPos_value != PosZero) //inverse
+        {
+            ledcWrite(indexMotorChanal_A, 40);
+        }
+        else
+        {
+            ledcWrite(indexMotorChanal_A, 0);
+           break;
+        }
+    }
+    
+    while(true)
+    {
+        //middlePos_value =  analogRead(middlePos_Pin);
+        middlePos_value = map(analogRead(middlePos_Pin),0,255,255,0);
+
+        if(middlePos_value != PosZero ) // inverse
+        {
+            ledcWrite(middleMotorChanal_B, 40);
+        }
+        else
+        {
+            ledcWrite(middleMotorChanal_B, 0);
+           break;
+        }
+    }
+
+   while(true)
+    {
+        ringPos_value =  analogRead(ringPos_Pin);
+        if(ringPos_value != PosZero )
+        {
+            ledcWrite(ringMotorChanal_A, 40);
+        }
+        else
+        {
+            ledcWrite(ringMotorChanal_A, 0);
+           break;
+        }
+    }
+
+     while(true)
+    {
+        pinkyPos_value =  analogRead(pinkyPos_Pin);
+        if(pinkyPos_value != PosZero)
+        {
+            ledcWrite(pinkyMotorChanal_A, 40);
+        }
+        else
+        {
+            ledcWrite(pinkyMotorChanal_A, 0);
+           break;
+        }
+    }
+    
+    //indexPos_value =  analogRead(indexPos_Pin);
+    //middlePos_value =  analogRead(middlePos_Pin);
+    //ringPos_value =  analogRead(ringPos_Pin);
+    //pinkyPos_value =  analogRead(pinkyPos_Pin);
+
+}
+
+
+void findMid()
+{
+
+    while(true)
+    {
+        thumbPos_value =  analogRead(thumbPos_Pin);
+        Serial.println(thumbPos_value);
+        if(thumbPos_value <= destVal &&  thumbPos_value >= destVal - 3)
+        {
+            ledcWrite(thumbMotorChanal_A, 0);
+            break;
+        }
+        else
+        {
+            ledcWrite(thumbMotorChanal_A, speed);
+        }
+    }
+
+
+    while(true)
+    {
+        indexPos_value =  analogRead(indexPos_Pin);
+        Serial.println(indexPos_value);
+        if(indexPos_value <= destVal && indexPos_value >= destVal - 3 ) 
+        {
+
+            ledcWrite(indexMotorChanal_A, 0);
+           break;
+           
+        }
+        else
+        {
+            ledcWrite(indexMotorChanal_A, speed);
+        }
+    }
+    
+    while(true)
+    {
+        middlePos_value =  analogRead(middlePos_Pin);
+        Serial.println(middlePos_value);
+        if(middlePos_value <= destVal && middlePos_value >= destVal - 3 )
+        {
+
+            ledcWrite(middleMotorChanal_A, 0);
+           break;
+        }
+        else
+        {
+
+            ledcWrite(middleMotorChanal_A, speed);
+        }
+    }
+
+
+   while(true)
+    {
+        ringPos_value =  analogRead(ringPos_Pin);
+        Serial.println(ringPos_value);
+        if(ringPos_value <= destVal && ringPos_value >= destVal -3)
+        {
+
+            ledcWrite(ringMotorChanal_A, 0);
+           break;
+        }
+        else
+        {
+
+            ledcWrite(ringMotorChanal_A, speed);
+        }
+    }
+
+     while(true)
+    {
+        pinkyPos_value =  analogRead(pinkyPos_Pin);
+        Serial.println(pinkyPos_value);
+        if(pinkyPos_value <= destVal &&  pinkyPos_value >= destVal-3)
+        {
+
+            ledcWrite(pinkyMotorChanal_A, 0);
+           break;
+        }
+        else
+        {
+            ledcWrite(pinkyMotorChanal_A, speed);
+
+        }
+    }
+    
+    //indexPos_value =  analogRead(indexPos_Pin);
+    //middlePos_value =  analogRead(middlePos_Pin);
+    //ringPos_value =  analogRead(ringPos_Pin);
+    //pinkyPos_value =  analogRead(pinkyPos_Pin);
+
+
+
+}
+
+String getValue(String data, char separator, int index)
+{
+  int found = 0;
+  int strIndex[] = {0, -1};
+  int maxIndex = data.length()-1;
+
+  for(int i=0; i<=maxIndex && found<=index; i++){
+    if(data.charAt(i)==separator || i==maxIndex){
+        found++;
+        strIndex[0] = strIndex[1]+1;
+        strIndex[1] = (i == maxIndex) ? i+1 : i;
+    }
+  }
+  return found>index ? data.substring(strIndex[0], strIndex[1]) : "";
+}
+void onSend(const uint8_t *mac_addr, esp_now_send_status_t status)
+{
+    Serial.println("ESP send");
+}
+void onSerialRecv()
+{
+    thumbPWM_M_A =  Serial.readString().toInt();
+    ledcWrite(thumbMotorChanal_A, thumbPWM_M_A);
+    //getValue(Serial.readString(),';',);
+}
+
+// Callback when data is received
+void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
+    Serial.println("got data");
+     for(int i = 0 ; i < 1000 ; ++i){
+        findZero();
+     }
+
+    /*
+      memcpy(&esp_now_mgs, incomingData, sizeof(esp_now_mgs));
+  String data = esp_now_mgs.msg;
+    thumbPWM_M_A = data.toInt();
+
+  ledcWrite(thumbMotorChanal_A, thumbPWM_M_A);
+    
+    */
+
+    //ledcWrite(thumbMotorChanal_B, thumbPWM_M_B);
+  //Serial.println(esp_now_mgs.msg);
+}
+
+void setup()
+{
+    Serial.begin(115200);
+  Wire.begin();
+  delay(2000);
+/*MPU settings*/
+    MPU9250Setting setting;
+/*    
+        setting.accel_fs_sel = ACCEL_FS_SEL::A16G;
+    setting.gyro_fs_sel = GYRO_FS_SEL::G2000DPS;
+    setting.mag_output_bits = MAG_OUTPUT_BITS::M16BITS;
+    setting.fifo_sample_rate = FIFO_SAMPLE_RATE::SMPL_200HZ;
+    setting.gyro_fchoice = 0x03;
+    setting.gyro_dlpf_cfg = GYRO_DLPF_CFG::DLPF_41HZ;
+    setting.accel_fchoice = 0x01;
+    setting.accel_dlpf_cfg = ACCEL_DLPF_CFG::DLPF_45HZ;
+*/    
+
+    setting.accel_fs_sel = ACCEL_FS_SEL::A16G;
+    setting.gyro_fs_sel = GYRO_FS_SEL::G2000DPS;
+    setting.mag_output_bits = MAG_OUTPUT_BITS::M16BITS;
+    setting.fifo_sample_rate = FIFO_SAMPLE_RATE::SMPL_1000HZ;
+    setting.gyro_fchoice = 0x03;
+    setting.gyro_dlpf_cfg = GYRO_DLPF_CFG::DLPF_3600HZ;
+    setting.accel_fchoice = 0x01;
+    setting.accel_dlpf_cfg = ACCEL_DLPF_CFG::DLPF_420HZ;
+
+
+    if (!mpu.setup(0x68)) {  // change to your own address
+        while (1) {
+            Serial.println("MPU connection failed. Please check your connection with `connection_check` example.");
+            delay(5000);
+        }
+    }
+
+    mpu.setAccBias(-62.57, 62.83, -171.52);
+    mpu.setGyroBias(1.15, -1.30, -10.20);
+    mpu.setMagBias(0.00, 51.97, 677.30);
+    mpu.setMagScale(1.05, 1.18, 0.83);
+
+    analogReadResolution(8);
+
+    // attach the channel to the GPIO to be controlled
+    ledcAttachPin(thumbMotor_A, thumbMotorChanal_A);
+    ledcAttachPin(thumbMotor_B, thumbMotorChanal_B);
+
+    ledcAttachPin(indexMotor_A, indexMotorChanal_A);
+    ledcAttachPin(indexMotor_B, indexMotorChanal_B);
+    
+    ledcAttachPin(middleMotor_A, middleMotorChanal_A);
+    ledcAttachPin(middleMotor_B, middleMotorChanal_B);
+
+    ledcAttachPin(ringMotor_A, ringMotorChanal_A);
+    ledcAttachPin(ringMotor_B, ringMotorChanal_B);
+
+
+    ledcAttachPin(pinkyMotor_A, pinkyMotorChanal_A);
+    ledcAttachPin(pinkyMotor_B, pinkyMotorChanal_B);
+
+    // configure LED PWM functionalitites
+    ledcSetup(thumbMotorChanal_A, freq, resolution);
+    ledcSetup(thumbMotorChanal_B, freq, resolution);
+    
+    ledcSetup(indexMotorChanal_A, freq, resolution);
+    ledcSetup(indexMotorChanal_B, freq, resolution);
+
+    ledcSetup(middleMotorChanal_A, freq, resolution);
+    ledcSetup(middleMotorChanal_B, freq, resolution);
+
+    ledcSetup(ringMotorChanal_A, freq, resolution);
+    ledcSetup(ringMotorChanal_B, freq, resolution);
+
+    ledcSetup(pinkyMotorChanal_A, freq, resolution);
+    ledcSetup(pinkyMotorChanal_B, freq, resolution);
+    
+    //Serial.onReceive();
+
+    // ledcWrite(indexMotor_A, 40);
+    // ledcWrite(indexMotor_A, 40);
+     //analogWrite(thumbMotor_B, 0);
+
+    // for(int i = 0 ; i < 1000 ; ++i){
+    //    findZero();
+  //   }
+     Serial.onReceive(onSerialRecv,false);
+     WiFi.mode(WIFI_STA);
+     //Serial.println(WiFi.macAddress());
+
+
+
+  // Init ESP-NOW
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("Error initializing ESP-NOW");
+    return;
+  }
+ 
+  // Register peer
+
+ memcpy(peerInfo.peer_addr, destAddr, 6);
+  peerInfo.channel = 0;  
+  peerInfo.encrypt = false;
+
+  // Add peer        
+  if (esp_now_add_peer(&peerInfo) != ESP_OK){
+    Serial.println("Failed to add peer");
+    return;
+  }
+  // Register for a callback function that will be called when data is received
+  esp_now_register_recv_cb(OnDataRecv);
+  // esp_now_register_send_cb(onSend);
+//MPU
+     
+    
+
+}
+
+void servoTest()
+{
+
+            
+            ledcWrite(thumbMotorChanal_A, speedVa);
+            ledcWrite(thumbMotorChanal_B,LOW);
+            delay(5000);
+            ledcWrite(thumbMotorChanal_A, LOW);
+            ledcWrite(thumbMotorChanal_B, speedVa);
+            delay(5000);
+
+            ledcWrite(thumbMotorChanal_A, LOW);
+            ledcWrite(thumbMotorChanal_B, LOW);
+            
+            ledcWrite(indexMotorChanal_A, speedVa);
+            ledcWrite(indexMotorChanal_B,LOW);
+            delay(5000);
+            ledcWrite(indexMotorChanal_A, LOW);
+            ledcWrite(indexMotorChanal_B, speedVa);
+            delay(5000);
+
+            ledcWrite(indexMotorChanal_A, LOW);
+            ledcWrite(indexMotorChanal_B, LOW);
+
+
+            ledcWrite(middleMotorChanal_A, 90);
+            ledcWrite(middleMotorChanal_B,LOW);
+            delay(5000);
+            ledcWrite(middleMotorChanal_A, LOW);
+            ledcWrite(middleMotorChanal_B, 90);
+            delay(5000);
+
+            ledcWrite(middleMotorChanal_A, LOW);
+            ledcWrite(middleMotorChanal_B, LOW);
+
+
+            ledcWrite(ringMotorChanal_A, speedVa);
+            ledcWrite(ringMotorChanal_B,LOW);
+            delay(5000);
+            ledcWrite(ringMotorChanal_A, LOW);
+            ledcWrite(ringMotorChanal_B, speedVa);
+            delay(5000);
+
+            ledcWrite(ringMotorChanal_A, LOW);
+            ledcWrite(ringMotorChanal_B, LOW);
+
+
+
+            ledcWrite(pinkyMotorChanal_A, speedVa);
+            ledcWrite(pinkyMotorChanal_B,LOW);
+            delay(5000);
+            ledcWrite(pinkyMotorChanal_A, LOW);
+            ledcWrite(pinkyMotorChanal_B, speedVa);
+            delay(5000);
+            
+            ledcWrite(pinkyMotorChanal_A, LOW);
+            ledcWrite(pinkyMotorChanal_B, LOW);
+
+    // ledcWrite(thumbMotorChanal_B, 0);
+     //delay(2000);
+     //ledcWrite(thumbMotorChanal_A, 0);
+     //analogWrite(thumbMotor_A,LOW);
+     //ledcWrite(thumbMotorChanal_B, 40);
+}
+
+
+
+void fingerControll()
+{   
+
+    int tempThumb=0;
+    for(int i = 0; i < arvgsample ; ++i){
+        tempThumb = tempThumb + analogRead(thumbPos_Pin);
+    }
+    thumbPos_value = tempThumb / arvgsample;
+    ledcWrite(thumbMotorChanal_A, thumbPWM_M_A);
+    ledcWrite(thumbMotorChanal_B, thumbPWM_M_B);
+
+    int tempIndex=0;
+    for(int i = 0; i < arvgsample ; ++i){
+        tempIndex = tempIndex + analogRead(indexPos_Pin);
+    }
+    indexPos_value = tempIndex / arvgsample;
+    ledcWrite(indexMotorChanal_A, indexPWM_M_A);
+    ledcWrite(indexMotorChanal_B, indexPWM_M_B);
+
+    int tempMiddle=0;
+    for(int i = 0; i < arvgsample ; ++i){
+        tempMiddle = tempMiddle + analogRead(middlePos_Pin);
+    }
+    middlePos_value = tempMiddle / arvgsample;
+    ledcWrite(middleMotorChanal_A, middlePWM_M_A);
+    ledcWrite(middleMotorChanal_B, middlePWM_M_B);
+
+    int tempRing=0;
+    for(int i = 0; i < arvgsample ; ++i){
+        tempRing = tempRing + analogRead(ringPos_Pin);
+    }
+    ringPos_value = tempRing / arvgsample;
+    ledcWrite(ringMotorChanal_A, ringPWM_M_A);
+    ledcWrite(ringMotorChanal_B, ringPWM_M_B);
+
+
+    int tempPinky=0;
+    for(int i = 0; i < arvgsample ; ++i){
+        tempPinky = tempPinky +analogRead(pinkyPos_Pin);
+    }
+    pinkyPos_value = tempPinky / arvgsample;
+    ledcWrite(pinkyMotorChanal_A, pinkyPWM_M_A);
+    ledcWrite(pinkyMotorChanal_B, pinkyPWM_M_B);
+}
+
+void print_Quat() {
+    Serial.print(mpu.getQuaternionW(), 2);
+    Serial.print(";");
+    Serial.print(mpu.getQuaternionX(), 2);
+    Serial.print(";");
+    Serial.print(mpu.getQuaternionY(), 2);
+    Serial.print(";");
+    Serial.println(mpu.getQuaternionZ(), 2);
+}
+void print_roll_pitch_yaw() {
+    //Serial.print("Yaw, Pitch, Roll: ");
+   // Serial.print(mpu.getYaw(), 2);
+     Serial.print(mpu.getYaw(), 2);
+    Serial.print(";");
+    Serial.print(mpu.getPitch(), 2);
+    Serial.print(";");
+    Serial.println(mpu.getRoll(), 2);
+   // mpu.setAccBias();
+
+}
+
+void loop()
+{   
+    //servoTest();
+  // findZero();
+  //findMid();
+
+    if (mpu.update()) {
+        //print_roll_pitch_yaw();
+        print_Quat();
+    }
+
+    fingerControll();
+      String test = String(thumbPos_value) + sep + String(indexPos_value) + sep + String(middlePos_value)
+     + sep + String(ringPos_value) + sep + String(pinkyPos_value);
+     Serial.println(test);
+
+    /*
+  Serial.println("Acceleration in g (x,y,z):");
+  Serial.print(gValue.x);
+  Serial.print("   ");
+  Serial.print(gValue.y);
+  Serial.print("   ");
+  Serial.println(gValue.z);
+  Serial.print("Resultant g: ");
+  Serial.println(resultantG);
+
+  Serial.println("Gyroscope data in degrees/s: ");
+  Serial.print(gyr.x);
+  Serial.print("   ");
+  Serial.print(gyr.y);
+  Serial.print("   ");
+  Serial.println(gyr.z);
+
+  Serial.println("Magnetometer Data in µTesla: ");
+  Serial.print(magValue.x);
+  Serial.print("   ");
+  Serial.print(magValue.y);
+  Serial.print("   ");
+  Serial.println(magValue.z);
+
+  Serial.print("Temperature in °C: ");
+  Serial.println(temp);
+  */
+   // now you should read the gyroscope, accelerometer (and magnetometer if you have it also)
+  // NOTE: the gyroscope data have to be in radians
+  // if you have them in degree convert them with: DEG_TO_RAD example: gx * DEG_TO_RAD
+
+
+    /*
+       fingerControll();
+      //255 - (indexPos_value /4)
+     middlePos_value =  map(middlePos_value,0,255,255,0);
+     indexPos_value = map(indexPos_value,0,255,255,0);
+
+     String test = String(thumbPos_value) + sep + String(indexPos_value) + sep + String(middlePos_value)
+     + sep + String(ringPos_value) + sep + String(pinkyPos_value);
+     test.toCharArray(esp_now_mgs.msg,sizeof(esp_now_mgs.msg));
+
+     esp_now_send(destAddr,(uint8_t*) &esp_now_mgs,sizeof(esp_now_mgs));
+
+     delay(10);
+    */
+
+    // servoTest();
+    /*
+        
+     for(int i = 0; i< 5; ++i)
+    {
+    fingerPos_values[i] =  analogRead(fingerPos_Pin[i]);
+    }
+
+
+    for(int j = 0; j< 5 ; j++)
+    {
+     Serial.print(fingerPos_values[j]);
+     Serial.print(" | ");
+    }
+
+     Serial.println();
+    delay(1000);
+    
+    */
+}
