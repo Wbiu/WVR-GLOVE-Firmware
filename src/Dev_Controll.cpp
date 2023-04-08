@@ -14,7 +14,9 @@ WirelessCon wirelessCon;
  44:17:93:E3:8E:CC MACADDR of the Collector
  Note** ESP-NOW is used for wireless comunication! 
 */
-uint8_t destAddr[6] = {0x44, 0x17, 0x93, 0xE3, 0x8E, 0xCC};
+uint8_t destAddr[6];
+
+
 uint8_t esp_now_channel = 1;
 
 static char espMsgBuff[50];
@@ -36,8 +38,8 @@ char* spiffs_buffer = new char[FILE_BUFFER_SIZE]; // with hold the data from the
 dev_conf glove_confs;
 
 /*imu data*/
-float ryp_buffer [IMU_BUFFER_SIZE];
-
+float ryp_buffer [IMU_BUFFER_SIZE_EU];
+float quat_buffer [IMU_BUFFER_SIZE_QUAT];
 /*cmd vars*/
 char* cli_buffer;
 char* cmd_buff[5]; 
@@ -62,9 +64,7 @@ volatile int pky_ffb = 0;
 
 TaskHandle_t ffb_task;
 TaskHandle_t* sWireless_task;
-TaskHandle_t* sWireless_task_no_IMU;
 TaskHandle_t* sSerial_task;
-TaskHandle_t* sSerial_task_no_IMU;
 
 /*Toggle Debuging,these will only show up in serial COM port*/
 #define DEBUG  
@@ -73,6 +73,20 @@ TaskHandle_t* sSerial_task_no_IMU;
 #else
 #define PRINT_DEBUG(x) 
 #endif
+
+bool initDev()
+{
+    serialSetup();
+    Wire.begin();
+    delay(2000);
+    initSPIFFS();
+    espNowSetup();
+    pinSetup();
+    if(glove_confs.imu_state == 1){imuSetup();}
+    if(glove_confs.onboot_servo == 1){checkServo();}
+    smp = xSemaphoreCreateMutex();
+    return DEV_STAT;
+}
 void pinSetup()
 {
     // configure PWM functionalitites
@@ -153,6 +167,9 @@ void validateSettings()
 
     const char *imu_data = doc["imu_data"];
     const char *conType = doc["conType"];
+    const char* macAddr = doc["collector_addr"];
+    
+    sfs_helper.parse_mac_addr(macAddr,destAddr);
 
     if(strcmp(imu_data, "eu") == 0)
     {
@@ -189,11 +206,11 @@ void serialOnRecv_Cb()
         {
         case HOLD_CMD:
             Serial.printf("\n%x\0", 0x01);
-            glove_confs.imu_state == 1 ? vTaskSuspend(*sSerial_task) : vTaskSuspend(*sSerial_task_no_IMU);
+            vTaskSuspend(*sSerial_task);
             break;
         case CONTINUE:
             Serial.printf("\n%x\0", 0x01);
-            glove_confs.imu_state == 1 ? vTaskResume(*sSerial_task) : vTaskResume(*sSerial_task_no_IMU);
+            vTaskResume(*sSerial_task);
             break;
         case MACADDR_CMD:
             char macArrd[18];
@@ -233,13 +250,12 @@ void ffb(void * parameter)
         xSemaphoreGive(smp);
     }
 }
-void sendWireless(void * parameter)
+void sendWireless_with_IMU_EU()
 {
-        for(;;)
+    for(;;)
         {   
             readFingerPos();
-            readIMU();
-
+            readIMU_EU();
             sprintf(espMsgBuff,"%i;%i;%i;%i;%i;%.1f;%.1f;%.1f\0",
                       map(fingerReadings[THB_READING_IDX], 0, 255, 255, 0),
                       map(fingerReadings[IDX_READING_IDX], 0, 255, 255, 0), // reversing value
@@ -254,7 +270,41 @@ void sendWireless(void * parameter)
             wirelessCon.send((uint8_t*)&esp_now_send_msg);
         }
 }
-void sendWireless_no_IMU(void * parameter)
+void sendWireless_with_IMU_QUAT()
+{
+            for(;;)
+        {   
+            readFingerPos();
+            readIMU_QUAT();
+            sprintf(espMsgBuff,"%i;%i;%i;%i;%i;%.3f;%.3f;%.3f;%.3f\0",
+                      map(fingerReadings[THB_READING_IDX], 0, 255, 255, 0),
+                      map(fingerReadings[IDX_READING_IDX], 0, 255, 255, 0), // reversing value
+                      map(fingerReadings[MDL_READING_IDX], 0, 255, 255, 0), // reversing value
+                      fingerReadings[RNG_READING_IDX],
+                      fingerReadings[PKY_READING_IDX],
+                      quat_buffer[0],
+                      quat_buffer[1],
+                      quat_buffer[2],
+                      quat_buffer[2]);
+
+            memcpy(&esp_now_send_msg,espMsgBuff , sizeof(espMsgBuff));
+            wirelessCon.send((uint8_t*)&esp_now_send_msg);
+        }
+}
+void sendWireless(void * parameter)
+{       
+
+        if(glove_confs.imu_state == 1)
+        {
+            if(glove_confs.gyrodata == IMU::EU) sendWireless_with_IMU_EU();
+            if(glove_confs.gyrodata == IMU::QUAT) sendWireless_with_IMU_QUAT();
+        }
+        else if(glove_confs.imu_state == 0)
+        {
+            sendWireless_no_IMU();
+        }
+}
+void sendWireless_no_IMU()
 {
         for(;;)
         {   
@@ -323,8 +373,6 @@ void initTasks()
         switch (glove_confs.conType)
         {
         case WIRED:
-            if(glove_confs.imu_state == 1)
-            {   
                 sSerial_task = new TaskHandle_t;
                 xTaskCreatePinnedToCore(
                 sendSerial,
@@ -334,24 +382,8 @@ void initTasks()
                 1,
                 sSerial_task,
                 1);
-            }
-            else
-            {   
-                sSerial_task_no_IMU = new TaskHandle_t;
-                xTaskCreatePinnedToCore(
-                sendSerial_no_IMU,
-                "sendSerial_no_IMU",
-                5120,
-                NULL,
-                1,
-                sSerial_task_no_IMU,
-                1);
-            }
             break;
-
         case WIRELESS:
-            if(glove_confs.imu_state == 1)
-            {
             sWireless_task = new TaskHandle_t;
             xTaskCreatePinnedToCore(
                 sendWireless,
@@ -361,19 +393,6 @@ void initTasks()
                 1,
                 sWireless_task,
                 1);
-            }
-            else
-            {
-            sWireless_task_no_IMU = new TaskHandle_t;
-            xTaskCreatePinnedToCore(
-                sendWireless_no_IMU,
-                "sendWireless_no_IMU",
-                5120,
-                NULL,
-                1,
-                sWireless_task_no_IMU,
-                1);
-            }
             break;
         }
 
@@ -385,19 +404,6 @@ void initTasks()
       1,  
       &ffb_task,
       1);
-}
-bool initDev()
-{
-    serialSetup();
-    Wire.begin();
-    delay(2000);
-    initSPIFFS();
-    espNowSetup();
-    pinSetup();
-    if(glove_confs.imu_state == 1){imuSetup();}
-    if(glove_confs.onboot_servo == 1){checkServo();}
-    smp = xSemaphoreCreateMutex();
-    return DEV_STAT;
 }
 void readFingerPos()
 {
@@ -424,12 +430,26 @@ void espNowSetup()
     }
 
 }
-void sendSerial(void * parameter)
+void sendSerial(void *parameter)
 {
+    if (glove_confs.imu_state == 1)
+    {
+        if (glove_confs.gyrodata == IMU::EU)sendSerial_with_IMU_EU();
+        if (glove_confs.gyrodata == IMU::QUAT)sendSerial_with_IMU_QUAT();
+    }
+
+    if (glove_confs.imu_state == 0)
+    {
+        sendSerial_no_IMU();
+    }
+
+}
+void sendSerial_with_IMU_EU()
+{   
     for (;;)
     {   
         readFingerPos();
-        readIMU();
+        readIMU_EU();
         Serial.printf("\n{%i;%i;%i;%i;%i;%.1f;%.1f;%.1f}\0",
                       map(fingerReadings[THB_READING_IDX], 0, 255, 255, 0), // reversing value
                       map(fingerReadings[IDX_READING_IDX], 0, 255, 255, 0), // reversing value
@@ -439,10 +459,27 @@ void sendSerial(void * parameter)
                       ryp_buffer[0],
                       ryp_buffer[1],
                       ryp_buffer[2]);
-
     }
 }
-void sendSerial_no_IMU(void * parameter)
+void sendSerial_with_IMU_QUAT()
+{
+        for (;;)
+    {   
+        readFingerPos();
+        readIMU_QUAT();
+        Serial.printf("\n{%i;%i;%i;%i;%i;%.3f;%.3f;%.3f;%.3f}\0",
+                      map(fingerReadings[THB_READING_IDX], 0, 255, 255, 0), // reversing value
+                      map(fingerReadings[IDX_READING_IDX], 0, 255, 255, 0), // reversing value
+                      map(fingerReadings[MDL_READING_IDX], 0, 255, 255, 0), // reversing value
+                      fingerReadings[RNG_READING_IDX],
+                      fingerReadings[PKY_READING_IDX],
+                      quat_buffer[0],
+                      quat_buffer[1],
+                      quat_buffer[2],
+                      quat_buffer[3]);
+    }
+}
+void sendSerial_no_IMU()
 {
     for (;;)
     {   
@@ -455,9 +492,12 @@ void sendSerial_no_IMU(void * parameter)
                       fingerReadings[PKY_READING_IDX]);
     }
 }
-void readIMU()
+void readIMU_EU()
 {
     imu_bno.getRoll_Pitch_Yaw(ryp_buffer);
-    
+}
+void readIMU_QUAT()
+{
+    imu_bno.getQAUT(quat_buffer);
 }
 

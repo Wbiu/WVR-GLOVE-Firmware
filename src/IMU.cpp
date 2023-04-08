@@ -50,4 +50,20 @@ void IMU::getRoll_Pitch_Yaw(float rpy[])
         rpy[2] = euler.z();
 }
 
+void IMU::getQAUT(float quat[])
+{
+    imu::Quaternion quats = IMU::bno.getQuat();
+
+ //     double &w() { return _w; }
+//  double &x() { return _x; }
+  //double &y() { return _y; }
+ // double &z() { return _z; }
+
+  quat[0] = quats.w();
+  quat[1] = quats.x();
+  quat[2] = quats.y();
+  quat[3] = quats.z();
+
+}
+
 

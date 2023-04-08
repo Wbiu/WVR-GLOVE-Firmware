@@ -64,8 +64,8 @@ the first 8 are hight speed channel and the other 8 are low speed.
 
 #define FILE_BUFFER_SIZE    45
 #define FINGER_BUFFER_SIZE  25
-#define IMU_BUFFER_SIZE     3
-
+#define IMU_BUFFER_SIZE_EU     3
+#define IMU_BUFFER_SIZE_QUAT   4
 /*sample size for reading finger values*/
 #define SAMPLE_SIZE         10
 

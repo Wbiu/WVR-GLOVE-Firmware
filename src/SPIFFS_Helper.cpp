@@ -37,3 +37,14 @@ void SPIFFS_Helper::createDefaultSettings()
     f.print(defaultSettings);
     f.close();
 }
+
+void SPIFFS_Helper::parse_mac_addr(const char* macAddr, uint8_t* destAddr)
+{
+    int count = 0;
+    char* token = strtok((char*)macAddr, ":");
+    while (token != NULL)
+    {
+        destAddr[count++] = strtol(token, 0, 16);
+        token = strtok(NULL, ":");
+    }
+}

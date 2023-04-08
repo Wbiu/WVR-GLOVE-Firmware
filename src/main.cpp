@@ -20,6 +20,7 @@ int devStatus = DEVICE_STATUS_RDY;
 void setup()
 {
     devStatus = initDev();
+    
 #ifdef DEBUG
     if (devStatus == DEVICE_STATUS_ERR)
     {

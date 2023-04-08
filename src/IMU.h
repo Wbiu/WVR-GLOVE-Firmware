@@ -19,6 +19,7 @@ public :
     void setBais(adafruit_bno055_offsets_t offsets_type);
     void calibration();
     void getRoll_Pitch_Yaw(float ryp[]);
+    void getQAUT(float quat[]);
     enum DATATYPE {EU,QUAT};
 };
 

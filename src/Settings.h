@@ -5,5 +5,6 @@ typedef struct dev_conf{
     int imu_state;
     IMU::DATATYPE gyrodata;
     connectionType conType;
+    uint8_t collector_addr[6];
 }dev_conf;
 
